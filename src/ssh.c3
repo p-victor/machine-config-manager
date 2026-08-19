@@ -89,3 +89,49 @@ fn bool test_github_auth()
     if (catch out) return false;
     return out.contains("successfully authenticated");
 }
+
+<*
+ Offers to generate a new key if none is found under the common names.
+ No-ops entirely under `non_interactive` or without a controlling
+ terminal, so an automated install never generates a credential without
+ a human present. An existing key under a standard name is treated as
+ "use existing" automatically — no extra prompt needed when one's already
+ found. Same behavior as lib/ssh.sh's mc_ssh_ensure_key_interactive,
+ simplified to a plain y/n instead of a two-item menu (this DSL/CLI's
+ prompt surface only has confirm()/input(), not a general menu prompt —
+ env_select.c3's numbered menu is a different shape built for a longer,
+ open-ended list of environments, not a fixed two-choice generate-or-skip).
+*>
+fn void ensure_key_interactive(String ssh_dir, String comment, bool non_interactive)
+{
+    if (non_interactive || !io::stdin().isatty()) return;
+
+    String? existing = find_existing_key(ssh_dir);
+    if (try e = existing)
+    {
+        io::printfn("SSH key found: %s", e);
+        return;
+    }
+
+    if (!prompt::confirm("No SSH key found. Generate a new Ed25519 key?", true))
+    {
+        io::printn("Skipped SSH key setup.");
+        return;
+    }
+
+    String path = string::tformat("%s/id_ed25519", ssh_dir);
+    if (catch generate_key(path, comment))
+    {
+        io::printn("SSH key generation skipped.");
+        return;
+    }
+    io::printfn("SSH key generated: %s", path);
+    io::printn("");
+    io::printn("Public key:");
+    if (try pub = show_public_key(path))
+    {
+        io::printn(pub);
+    }
+    io::printn("");
+    io::printn("Add it to GitHub at: https://github.com/settings/keys");
+}
