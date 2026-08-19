@@ -32,6 +32,10 @@
     "machine_config_manager": {
       // Executable or library.
       "type": "executable",
+      // Output binary name — the CLI is invoked as `mcm`, distinct from
+      // the target/module name (which can't contain hyphens/underscores
+      // interchangeably the way a CLI name might want to read).
+      "name": "mcm",
       // Additional libraries, sources
       // and overrides of global settings here.
     },

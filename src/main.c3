@@ -20,7 +20,7 @@ fn int main(String[] args)
 {
     if (args.len < 2)
     {
-        io::printn("Usage: machine-config-manager <command> [args]");
+        io::printn("Usage: mcm <command> [args]");
         io::printn("Commands:");
         io::printn("  validate [--config-root PATH]");
         io::printn("  status   [--config-root PATH]");
