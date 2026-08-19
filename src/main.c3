@@ -2,8 +2,14 @@ module machine_config_manager;
 import machine_config_manager::discover;
 import machine_config_manager::registry;
 import machine_config_manager::dsl;
+import machine_config_manager::platform;
+import machine_config_manager::git;
 import std::io;
+import std::io::path;
+import std::os::env;
 import std::collections::list;
+
+const String MANAGER_VERSION = "0.1.0";
 
 fn int main(String[] args)
 {
@@ -12,6 +18,7 @@ fn int main(String[] args)
         io::printn("Usage: machine-config-manager <command> [args]");
         io::printn("Commands:");
         io::printn("  validate [--config-root PATH]");
+        io::printn("  status   [--config-root PATH]");
         return 64;
     }
 
@@ -19,15 +26,37 @@ fn int main(String[] args)
     {
         case "validate":
             return cmd_validate(args[2..]);
+        case "status":
+            return cmd_status(args[2..]);
         default:
             io::printfn("Unknown command: %s", args[1]);
             return 64;
     }
 }
 
-fn int cmd_validate(String[] args)
+<*
+ Default personal-config-repo location: $XDG_DATA_HOME/machine-config/repo,
+ falling back to $HOME/.local/share/machine-config/repo — same default
+ lib/xdg.sh's mc_config_repo_root resolves to.
+*>
+fn String default_config_root()
 {
-    String config_root = ".";
+    String? xdg_data = env::tget_var("XDG_DATA_HOME");
+    if (try base = xdg_data)
+    {
+        return string::tformat("%s/machine-config/repo", base);
+    }
+    String? home = env::tget_var("HOME");
+    if (try h = home)
+    {
+        return string::tformat("%s/.local/share/machine-config/repo", h);
+    }
+    return "./machine-config/repo";
+}
+
+fn String extract_config_root(String[] args)
+{
+    String config_root = default_config_root();
     for (usz i = 0; i < args.len; i++)
     {
         if (args[i] == "--config-root" && i + 1 < args.len)
@@ -36,6 +65,84 @@ fn int cmd_validate(String[] args)
             i++;
         }
     }
+    return config_root;
+}
+
+fn int cmd_status(String[] args)
+{
+    String config_root = extract_config_root(args);
+
+    platform::Platform? p = platform::detect();
+    if (catch err = p)
+    {
+        io::printfn("Failed to detect platform: %s", err);
+        return 1;
+    }
+
+    io::printn("Machine configuration");
+    io::printn("");
+
+    io::printn("Platform");
+    io::printfn("  Distribution: %s", p.pretty_name);
+    String context_label = "Native";
+    if (p.is_wsl) context_label = string::tformat("WSL%d", p.wsl_version);
+    io::printfn("  Environment:  %s", context_label);
+    io::printfn("  Architecture: %s", p.arch);
+    io::printfn("  User:         %s", p.username);
+    io::printn("");
+
+    io::printn("Manager");
+    io::printfn("  Version: %s", MANAGER_VERSION);
+    io::printn("");
+
+    io::printn("Repository");
+    Path? root_path = path::tnew(config_root);
+    if (catch root_path)
+    {
+        io::printfn("  Not found (%s)", config_root);
+        return 0;
+    }
+    if (!path::is_dir(root_path))
+    {
+        io::printfn("  Not found (%s)", config_root);
+        return 0;
+    }
+    io::printfn("  Path: %s", config_root);
+
+    if (git::is_available() && git::is_repo(config_root))
+    {
+        String? branch = git::current_branch(config_root);
+        String branch_label = "(detached)";
+        if (try b = branch)
+        {
+            if (b.len > 0) branch_label = b;
+        }
+        io::printfn("  Branch: %s", branch_label);
+
+        int? count = git::uncommitted_count(config_root);
+        if (try c = count)
+        {
+            if (c == 0)
+            {
+                io::printn("  No uncommitted changes");
+            }
+            else
+            {
+                io::printfn("  %d uncommitted change(s)", c);
+            }
+        }
+    }
+    else
+    {
+        io::printn("  Not a git repository");
+    }
+
+    return 0;
+}
+
+fn int cmd_validate(String[] args)
+{
+    String config_root = extract_config_root(args);
 
     discover::ModuleDiscovery md = discover::discover_modules(config_root);
     discover::EnvironmentDiscovery ed = discover::discover_environments(config_root);
