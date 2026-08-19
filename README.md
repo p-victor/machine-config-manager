@@ -18,21 +18,38 @@ where the boundary sits:
   here as a single compiled binary, replacing the ~8k lines of Bash
   previously implementing them directly in `machine-config`.
 
-The DSL itself (environments and modules, currently expressed as
-`mod_id "shell"` / `env_enable_module "git"`-style Bash function calls in
-`machine-config`'s `environments/*.sh` and `modules/*/module.sh`) is being
-redesigned here as a real parsed grammar rather than sourced Bash. See
-`machine-config`'s `docs/module-authoring.md` and
-`docs/environment-authoring.md` for the semantics this replaces.
+The DSL itself (environments and modules, previously `mod_id "shell"` /
+`env_enable_module "git"`-style Bash function calls in `machine-config`'s
+`environments/*.sh` and `modules/*/module.sh`) is a real parsed grammar
+here instead of sourced Bash: `.mcm` files, one instruction per line,
+Docker-flavored (`ID`/`NAME`/`SUPPORTS`/`REQUIRES`/`LINK`/`FROM` for
+modules; `ID`/`EXTENDS`/`ENABLE`/`REQUIRE_LOCAL` for environments — `FROM`
+is new, Docker-style single-parent module inheritance the Bash DSL never
+had). Module/environment ids are inferred from their path (directory name
+/ filename) rather than declared. See `machine-config`'s
+`docs/module-authoring.md` and `docs/environment-authoring.md` for the
+semantics this replaces.
 
 ## Status
 
-Early scaffolding. No parser, no ported command logic yet.
+`validate`/`status`/`diff`/`publish`/`install` are implemented — discovery,
+`FROM`/`EXTENDS`/`REQUIRES` resolution with cycle/conflict detection,
+platform detection, package management (pacman/apt/AUR), file deployment,
+local values, Git identity, SSH key setup, and the manual-task checklist.
+`doctor` is out of scope for now. `upgrade`/`init` (the commands
+`docs/upgrading.md` will describe) aren't built yet.
 
 ## Building
 
 ```bash
-c3c build
+c3c build   # -> build/mcm, statically linked
+c3c test
 ```
 
 Requires the [C3 compiler](https://github.com/c3lang/c3c) (`c3c`).
+Cross-compiling for another target (see `.github/workflows/release.yml`,
+which builds every release this way):
+
+```bash
+scripts/release.sh linux-aarch64 aarch64-linux-gnu-gcc
+```

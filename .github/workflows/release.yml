@@ -1,0 +1,111 @@
+name: Release
+
+# Builds mcm for every supported target and publishes a GitHub Release on
+# tag push. The actual build/checksum logic lives in scripts/release.sh —
+# this workflow is a thin wrapper around it (checkout, get c3c, run the
+# script, collect artifacts), so it runs unmodified under any other CI or
+# by hand. No native ARM runner needed: c3c itself only ships an x86_64
+# Linux binary, so both targets build on the same ubuntu-24.04 runner —
+# the aarch64 target is a genuine cross-compile (gcc-aarch64-linux-gnu as
+# the linker driver), not a native build. See scripts/release.sh's
+# comments and this workflow's commit message for how that was verified
+# to actually work before being relied on here.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  C3C_VERSION: 0.8.3
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install c3c
+        run: |
+          curl -fsSL -o c3.tar.gz "https://github.com/c3lang/c3c/releases/download/v${C3C_VERSION}/c3-linux.tar.gz"
+          tar -xzf c3.tar.gz
+          echo "$PWD/c3" >> "$GITHUB_PATH"
+
+      - name: Run tests
+        run: c3c test --linker=cc --cc gcc
+
+  build:
+    needs: test
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - c3c_target: linux-x64
+            output_name: linux-x86_64
+            cc: gcc
+            cross_package: ''
+          - c3c_target: linux-aarch64
+            output_name: linux-aarch64
+            cc: aarch64-linux-gnu-gcc
+            cross_package: gcc-aarch64-linux-gnu
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install c3c
+        run: |
+          curl -fsSL -o c3.tar.gz "https://github.com/c3lang/c3c/releases/download/v${C3C_VERSION}/c3-linux.tar.gz"
+          tar -xzf c3.tar.gz
+          echo "$PWD/c3" >> "$GITHUB_PATH"
+
+      - name: Install cross-toolchain
+        if: matrix.cross_package != ''
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ${{ matrix.cross_package }}
+
+      - name: Build
+        run: ./scripts/release.sh ${{ matrix.c3c_target }} ${{ matrix.cc }} ${{ matrix.output_name }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mcm-${{ matrix.output_name }}
+          path: |
+            build/mcm-${{ matrix.output_name }}
+            build/mcm-${{ matrix.output_name }}.sha256
+
+  release:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Assemble manager.lock checksum block
+        run: |
+          {
+            echo "MANAGER_VERSION=${GITHUB_REF_NAME#v}"
+            echo "MANAGER_RELEASE=${GITHUB_REF_NAME}"
+            echo "CONFIG_FORMAT_VERSION=2"
+            echo "MANAGER_SHA256_LINUX_X86_64=$(cat artifacts/mcm-linux-x86_64.sha256)"
+            echo "MANAGER_SHA256_LINUX_AARCH64=$(cat artifacts/mcm-linux-aarch64.sha256)"
+          } > artifacts/manager.lock.fragment
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "${GITHUB_REF_NAME}" \
+            --generate-notes \
+            artifacts/mcm-linux-x86_64 \
+            artifacts/mcm-linux-x86_64.sha256 \
+            artifacts/mcm-linux-aarch64 \
+            artifacts/mcm-linux-aarch64.sha256 \
+            artifacts/manager.lock.fragment

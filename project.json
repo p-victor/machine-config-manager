@@ -38,6 +38,14 @@
       "name": "mcm",
       // Additional libraries, sources
       // and overrides of global settings here.
+      // Fully static: this binary gets dropped onto a bare machine by
+      // install.sh with nothing else installed, so it can't assume the
+      // target's glibc/libgcc versions match whatever built it. Build
+      // with `--linker=cc --cc <path>` (see .github/workflows/release.yml)
+      // — c3c's builtin ld.lld linker doesn't know a cross-gcc's own
+      // library search paths, so linking must go through the actual gcc
+      // driver for these flags to resolve correctly.
+      "link-args": [ "-static", "-static-libgcc" ],
     },
   },
   // Global settings.
