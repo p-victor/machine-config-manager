@@ -22,6 +22,19 @@ fn bool is_repo(String path_str)
 }
 
 <*
+ Streams `git diff`'s own output straight to this process's stdout/stderr
+ (INHERIT_STDIO — a diff can be arbitrarily large, unlike the small,
+ known-bounded output current_branch/uncommitted_count capture into a
+ fixed buffer) and returns its exit status. Thin on purpose: the point is
+ showing exactly what `git diff` would show, not reimplementing it — same
+ rationale as commands/diff.sh in the Bash implementation.
+*>
+fn int? diff(String repo_path)
+{
+    return process::run({ "git", "-C", repo_path, "diff" }, process::SpawnOptions.INHERIT_STDIO);
+}
+
+<*
  Current branch name, or "" if detached/unborn. Caller must have already
  checked is_available()/is_repo() — this doesn't re-check either, same
  division of responsibility as the Bash implementation's status/diff

@@ -19,6 +19,7 @@ fn int main(String[] args)
         io::printn("Commands:");
         io::printn("  validate [--config-root PATH]");
         io::printn("  status   [--config-root PATH]");
+        io::printn("  diff     [--config-root PATH]");
         return 64;
     }
 
@@ -28,6 +29,8 @@ fn int main(String[] args)
             return cmd_validate(args[2..]);
         case "status":
             return cmd_status(args[2..]);
+        case "diff":
+            return cmd_diff(args[2..]);
         default:
             io::printfn("Unknown command: %s", args[1]);
             return 64;
@@ -138,6 +141,42 @@ fn int cmd_status(String[] args)
     }
 
     return 0;
+}
+
+fn int cmd_diff(String[] args)
+{
+    String config_root = extract_config_root(args);
+
+    Path? root_path = path::tnew(config_root);
+    if (catch root_path)
+    {
+        io::printfn("Config root not found: %s", config_root);
+        return 66;
+    }
+    if (!path::is_dir(root_path))
+    {
+        io::printfn("Config root not found: %s", config_root);
+        return 66;
+    }
+
+    if (!git::is_available())
+    {
+        io::printn("git is not installed — nothing to diff. Install git to use this command.");
+        return 1;
+    }
+    if (!git::is_repo(config_root))
+    {
+        io::printfn("Not a git repository: %s", config_root);
+        return 65;
+    }
+
+    int? status = git::diff(config_root);
+    if (catch err = status)
+    {
+        io::printfn("git diff failed: %s", err);
+        return 1;
+    }
+    return status;
 }
 
 fn int cmd_validate(String[] args)
