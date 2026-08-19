@@ -1,10 +1,10 @@
 module machine_config_manager::local_values;
 import machine_config_manager::dsl;
 import machine_config_manager::prompt;
+import machine_config_manager::xdg;
 import std::io;
 import std::io::file;
 import std::io::path;
-import std::os::env;
 import std::os::process;
 import std::collections::list;
 import std::collections::map;
@@ -20,20 +20,7 @@ import std::collections::map;
 *>
 alias LocalValues = HashMap{String, String};
 
-fn String default_local_env_file()
-{
-    String? xdg_config = env::tget_var("XDG_CONFIG_HOME");
-    if (try base = xdg_config)
-    {
-        return string::tformat("%s/machine-config/local.env", base);
-    }
-    String? home = env::tget_var("HOME");
-    if (try h = home)
-    {
-        return string::tformat("%s/.config/machine-config/local.env", h);
-    }
-    return "./.config/machine-config/local.env";
-}
+fn String default_local_env_file() => xdg::local_env_file();
 
 <*
  Parses NAME=VALUE lines (blank lines and #-prefixed comments ignored —

@@ -1,9 +1,9 @@
 module machine_config_manager::manual_tasks;
 import machine_config_manager::dsl;
+import machine_config_manager::xdg;
 import std::io;
 import std::io::file;
 import std::io::path;
-import std::os::env;
 import std::os::process;
 import std::collections::list;
 
@@ -31,20 +31,7 @@ fn Status status(dsl::ManualTaskDecl* task, String state_file_path)
     return is_marked_done(task.id, state_file_path) ? DONE : PENDING;
 }
 
-fn String default_state_file()
-{
-    String? xdg_state = env::tget_var("XDG_STATE_HOME");
-    if (try base = xdg_state)
-    {
-        return string::tformat("%s/machine-config/manual_tasks_done", base);
-    }
-    String? home = env::tget_var("HOME");
-    if (try h = home)
-    {
-        return string::tformat("%s/.local/state/machine-config/manual_tasks_done", h);
-    }
-    return "./.local/state/machine-config/manual_tasks_done";
-}
+fn String default_state_file() => xdg::manual_tasks_state_file();
 
 fn bool is_marked_done(String id, String state_file_path)
 {

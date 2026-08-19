@@ -6,6 +6,7 @@ import machine_config_manager::platform;
 import machine_config_manager::git;
 import machine_config_manager::security;
 import machine_config_manager::prompt;
+import machine_config_manager::xdg;
 import std::io;
 import std::io::path;
 import std::os::env;
@@ -45,29 +46,9 @@ fn int main(String[] args)
     }
 }
 
-<*
- Default personal-config-repo location: $XDG_DATA_HOME/machine-config/repo,
- falling back to $HOME/.local/share/machine-config/repo — same default
- lib/xdg.sh's mc_config_repo_root resolves to.
-*>
-fn String default_config_root()
-{
-    String? xdg_data = env::tget_var("XDG_DATA_HOME");
-    if (try base = xdg_data)
-    {
-        return string::tformat("%s/machine-config/repo", base);
-    }
-    String? home = env::tget_var("HOME");
-    if (try h = home)
-    {
-        return string::tformat("%s/.local/share/machine-config/repo", h);
-    }
-    return "./machine-config/repo";
-}
-
 fn String extract_config_root(String[] args)
 {
-    String config_root = default_config_root();
+    String config_root = xdg::config_repo_root();
     for (usz i = 0; i < args.len; i++)
     {
         if (args[i] == "--config-root" && i + 1 < args.len)
