@@ -195,3 +195,72 @@ fn List{ConflictPair} find_conflicts(ModuleRegistry* reg, String[] ids)
     }
     return conflicts;
 }
+
+<*
+ True if `a` and `b` (both $HOME-relative LINK paths) can't both be
+ deployed: identical paths, or one a directory ancestor of the other
+ (".config/nvim" vs. ".config/nvim/lua" — once the first is a symlink,
+ deploying anything "inside" it is nonsensical). Plain string comparison,
+ not filesystem-aware — doesn't know or care whether either path is
+ actually a directory on disk.
+*>
+fn bool paths_conflict(String a, String b)
+{
+    if (a == b) return true;
+    if (a.len < b.len) return b.starts_with(string::tformat("%s/", a));
+    return a.starts_with(string::tformat("%s/", b));
+}
+
+<*
+ One pair of modules whose (post-FROM) LINK paths collide, and the
+ specific paths that do.
+*>
+struct LinkConflict
+{
+    String module_a;
+    String path_a;
+    String module_b;
+    String path_b;
+}
+
+<*
+ Reports every pair of modules among `ids` that declare overlapping LINK
+ paths — the file-deployment counterpart to find_conflicts's EXCLUDES
+ check, since two modules that would both try to symlink the same (or a
+ nested) $HOME path can never both actually be deployed, whether or not
+ they declared each other as EXCLUDES.
+
+ Known gap: only catches conflicts between modules that declare LINK
+ explicitly. A module relying on the implicit default (link every file
+ under files/ individually, no LINK lines at all) needs the actual
+ files/ tree to know what it would deploy — that's filesystem-aware
+ resolution for a later phase (install/doctor), not this pure layer.
+*>
+fn List{LinkConflict} find_link_conflicts(ModuleRegistry* reg, String[] ids)
+{
+    List{LinkConflict} conflicts;
+    conflicts.tinit();
+
+    for (usz i = 0; i < ids.len; i++)
+    {
+        for (usz j = i + 1; j < ids.len; j++)
+        {
+            List{String} ignored;
+            ignored.tinit();
+            defer ignored.free();
+            dsl::ModuleDecl a = resolve_module(reg, ids[i], &ignored);
+            dsl::ModuleDecl b = resolve_module(reg, ids[j], &ignored);
+            foreach (pa : a.link)
+            {
+                foreach (pb : b.link)
+                {
+                    if (paths_conflict(pa, pb))
+                    {
+                        conflicts.push({ ids[i], pa, ids[j], pb });
+                    }
+                }
+            }
+        }
+    }
+    return conflicts;
+}

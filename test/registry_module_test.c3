@@ -172,3 +172,54 @@ fn void test_find_conflicts_detected_either_direction() @test
     test::eq(c[0].a, "a");
     test::eq(c[0].b, "b");
 }
+
+fn void test_paths_conflict_exact_and_nested() @test
+{
+    test::eq(paths_conflict(".config/nvim", ".config/nvim"), true);
+    test::eq(paths_conflict(".config/nvim", ".config/nvim/lua"), true);
+    test::eq(paths_conflict(".config/nvim/lua", ".config/nvim"), true);
+    test::eq(paths_conflict(".config/nvim", ".config/nvim2"), false);
+    test::eq(paths_conflict(".config/nvim", ".config/git"), false);
+}
+
+fn void test_find_link_conflicts_none() @test
+{
+    ModuleRegistry reg = module_registry_init();
+    reg.add(mk("nvim", "", {}, {}, {}, { ".config/nvim" }));
+    reg.add(mk("git", "", {}, {}, {}, { ".config/git" }));
+    List{LinkConflict} c = find_link_conflicts(&reg, { "nvim", "git" });
+    test::eq(c.len(), 0);
+}
+
+fn void test_find_link_conflicts_exact_duplicate() @test
+{
+    ModuleRegistry reg = module_registry_init();
+    reg.add(mk("nvim", "", {}, {}, {}, { ".config/nvim" }));
+    reg.add(mk("nvim-fork", "", {}, {}, {}, { ".config/nvim" }));
+    List{LinkConflict} c = find_link_conflicts(&reg, { "nvim", "nvim-fork" });
+    test::eq(c.len(), 1);
+    test::eq(c[0].module_a, "nvim");
+    test::eq(c[0].path_a, ".config/nvim");
+    test::eq(c[0].module_b, "nvim-fork");
+}
+
+fn void test_find_link_conflicts_nested_path() @test
+{
+    ModuleRegistry reg = module_registry_init();
+    reg.add(mk("nvim", "", {}, {}, {}, { ".config/nvim" }));
+    reg.add(mk("nvim-lua-extra", "", {}, {}, {}, { ".config/nvim/lua" }));
+    List{LinkConflict} c = find_link_conflicts(&reg, { "nvim", "nvim-lua-extra" });
+    test::eq(c.len(), 1);
+}
+
+fn void test_find_link_conflicts_inherited_via_from() @test
+{
+    // A conflict introduced through a FROM-inherited LINK is still caught
+    // — find_link_conflicts operates on resolved (post-FROM) decls.
+    ModuleRegistry reg = module_registry_init();
+    reg.add(mk("_base", "", {}, {}, {}, { ".config/shared" }));
+    reg.add(mk("a", "_base"));
+    reg.add(mk("b", "", {}, {}, {}, { ".config/shared" }));
+    List{LinkConflict} c = find_link_conflicts(&reg, { "a", "b" });
+    test::eq(c.len(), 1);
+}
