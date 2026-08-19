@@ -2,6 +2,7 @@ module machine_config_manager::git;
 import std::io;
 import std::io::path;
 import std::os::process;
+import std::collections::list;
 
 <*
  True if `git` is on PATH and actually runs. The one place every
@@ -65,4 +66,80 @@ fn int? uncommitted_count(String repo_path)
         if (line.trim().len > 0) count++;
     }
     return count;
+}
+
+<*
+ Raw `git status --porcelain` output, copied into tmem (see
+ current_branch's comment — same stack-buffer-lifetime reason).
+*>
+fn String? status_porcelain(String repo_path)
+{
+    char[65536] buf;
+    String out = process::run_capture_stdout(&buf, { "git", "-C", repo_path, "status", "--porcelain", "--untracked-files=all" })!;
+    return out.tcopy();
+}
+
+<*
+ Parses `git status --porcelain` output into repo-relative changed paths.
+ A rename ("old -> new") keeps only the new path. Same known
+ simplification as commands/publish.sh's mc_publish_read_changed_files:
+ doesn't handle quoted/escaped filenames from very unusual names.
+*>
+fn List{String} parse_changed_files(String porcelain_output)
+{
+    List{String} paths;
+    paths.tinit();
+    foreach (line : porcelain_output.tsplit("\n"))
+    {
+        if (line.len < 4) continue;
+        String p = line[3..];
+        sz? arrow = p.index_of(" -> ");
+        if (try a = arrow) p = p[a + 4..];
+        paths.push(p);
+    }
+    return paths;
+}
+
+fn int? add_all(String repo_path)
+{
+    return process::run({ "git", "-C", repo_path, "add", "-A" }, process::SpawnOptions.INHERIT_STDIO);
+}
+
+fn int? commit(String repo_path, String message)
+{
+    return process::run({ "git", "-C", repo_path, "commit", "--quiet", "-m", message }, process::SpawnOptions.INHERIT_STDIO);
+}
+
+fn bool has_remote(String repo_path)
+{
+    char[4096] buf;
+    String? out = process::run_capture_stdout(&buf, { "git", "-C", repo_path, "remote" });
+    if (catch out) return false;
+    return out.trim().len > 0;
+}
+
+fn int? fetch(String repo_path)
+{
+    return process::run({ "git", "-C", repo_path, "fetch", "--quiet" }, process::SpawnOptions.INHERIT_STDIO);
+}
+
+<*
+ Fast-forward only — never auto-resolves a conflict, never force-merges.
+ A non-zero exit means the branches have diverged; the caller (publish)
+ dies cleanly rather than attempting anything cleverer, same as
+ commands/publish.sh's mc_publish_sync.
+*>
+fn int? merge_ff_only(String repo_path)
+{
+    return process::run({ "git", "-C", repo_path, "merge", "--ff-only", "FETCH_HEAD" }, process::SpawnOptions.INHERIT_STDIO);
+}
+
+<*
+ Never force-pushes — a plain `git push`, so a rejected push (e.g. the
+ remote moved after fetch/merge above) surfaces as a normal failure
+ instead of being overridden.
+*>
+fn int? push(String repo_path)
+{
+    return process::run({ "git", "-C", repo_path, "push" }, process::SpawnOptions.INHERIT_STDIO);
 }
