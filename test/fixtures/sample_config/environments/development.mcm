@@ -1,0 +1,7 @@
+NAME Development
+DESCRIPTION Git, Neovim and development tools
+ORDER 10
+
+EXTENDS base
+
+ENABLE nvim

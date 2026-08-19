@@ -1,0 +1,5 @@
+NAME Neovim
+DESCRIPTION Neovim editor configuration
+
+REQUIRES shell
+LINK .config/nvim

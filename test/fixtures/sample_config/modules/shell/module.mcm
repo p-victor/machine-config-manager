@@ -1,0 +1,4 @@
+# modules/shell/module.mcm — id inferred as "shell" from the directory.
+DESCRIPTION Interactive shell configuration (prompt, aliases, environment)
+
+SUPPORTS arch ubuntu debian

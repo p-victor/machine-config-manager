@@ -1,0 +1,7 @@
+NAME Base
+DESCRIPTION Shell configuration shared by every environment
+HIDDEN
+
+ENABLE shell
+
+REQUIRE_LOCAL GIT_NAME GIT_EMAIL

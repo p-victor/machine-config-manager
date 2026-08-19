@@ -152,6 +152,24 @@ fn void test_expand_requires_picks_up_from_inherited_requires() @test
     test::eq(resolved[1], "nvim");
 }
 
+fn void test_validate_from_chains_reports_unknown_target() @test
+{
+    ModuleRegistry reg = module_registry_init();
+    reg.add(mk("nvim", "ghost"));
+    List{String} errors = validate_from_chains(&reg);
+    test::eq(errors.len(), 1);
+    test::@check(errors[0].contains("unknown module"), "got: %s", errors[0]);
+}
+
+fn void test_validate_from_chains_clean_registry() @test
+{
+    ModuleRegistry reg = module_registry_init();
+    reg.add(mk("_base", "", { "arch" }));
+    reg.add(mk("nvim", "_base"));
+    List{String} errors = validate_from_chains(&reg);
+    test::eq(errors.len(), 0);
+}
+
 fn void test_find_conflicts_none() @test
 {
     ModuleRegistry reg = module_registry_init();

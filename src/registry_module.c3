@@ -40,6 +40,28 @@ fn dsl::ModuleDecl*? ModuleRegistry.find(&self, String id)
 }
 
 <*
+ Resolves every module's FROM chain and reports every problem found
+ (unknown target, cycle) across the whole registry in one pass — the
+ permissive, whole-registry counterpart to resolve_module, which only
+ walks the one module it's asked to resolve and is what expand_requires/
+ find_conflicts call internally (discarding those errors, since by the
+ time they're walking a module they've already been validated once via
+ this function — see discover_test.c3/a future `validate` command, which
+ calls this directly instead of relying on resolve_module's callers to
+ happen to surface them).
+*>
+fn List{String} validate_from_chains(ModuleRegistry* reg)
+{
+    List{String} errors;
+    errors.tinit();
+    foreach (&m : reg.modules)
+    {
+        resolve_module(reg, m.id, &errors);
+    }
+    return errors;
+}
+
+<*
  Resolves one module's FROM chain: identity (id/name/description) always
  comes from the module itself, never a parent — only the four list fields
  (SUPPORTS/EXCLUDES_DISTRO/REQUIRES/EXCLUDES/LINK) are inherited, parent's
