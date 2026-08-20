@@ -90,11 +90,11 @@ jobs:
       - name: Assemble manager.lock checksum block
         run: |
           {
-            echo "MANAGER_VERSION=${GITHUB_REF_NAME#v}"
-            echo "MANAGER_RELEASE=${GITHUB_REF_NAME}"
-            echo "CONFIG_FORMAT_VERSION=2"
-            echo "MANAGER_SHA256_LINUX_X86_64=$(cat artifacts/mcm-linux-x86_64.sha256)"
-            echo "MANAGER_SHA256_LINUX_AARCH64=$(cat artifacts/mcm-linux-aarch64.sha256)"
+            echo "MANAGER_VERSION=\"${GITHUB_REF_NAME#v}\""
+            echo "MANAGER_RELEASE=\"${GITHUB_REF_NAME}\""
+            echo "CONFIG_FORMAT_VERSION=\"2\""
+            echo "MANAGER_SHA256_LINUX_X86_64=\"$(cat artifacts/mcm-linux-x86_64.sha256)\""
+            echo "MANAGER_SHA256_LINUX_AARCH64=\"$(cat artifacts/mcm-linux-aarch64.sha256)\""
           } > artifacts/manager.lock.fragment
 
       - name: Create release
