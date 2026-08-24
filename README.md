@@ -4,19 +4,22 @@ The compiled manager binary for
 [machine-config](https://github.com/p-victor/machine-config), written in
 [C3](https://c3-lang.org/).
 
-`machine-config` deliberately has zero runtime dependencies beyond Bash +
-git + curl-or-wget + tar, so a bare machine can bootstrap itself with
-nothing else installed. That property doesn't change here — it just moves
-where the boundary sits:
+`machine-config` deliberately has zero *hard* runtime dependencies beyond
+Bash + curl-or-wget + tar, so a bare machine can bootstrap itself with
+nothing else installed — not even git. That property doesn't change here
+— it just moves where the boundary sits:
 
-- `machine-config`'s `template/install.sh` stays a tiny POSIX/Bash bootstrap
-  script: it clones your personal config repo, reads `manager.lock`,
-  downloads the platform-matching prebuilt binary from this repo's GitHub
-  Releases, verifies its checksum, and execs it.
-- Everything past that point — the `install`/`doctor`/`publish`/`validate`/
-  `status`/`diff` commands, and the environment/module DSL parser — lives
-  here as a single compiled binary, replacing the ~8k lines of Bash
-  previously implementing them directly in `machine-config`.
+- `machine-config`'s `template/install.sh` stays a tiny POSIX/Bash
+  bootstrap script: it downloads your personal config repo and the
+  platform-matching prebuilt binary from this repo's GitHub Releases (both
+  plain HTTPS tarball/binary fetches, no git clone anywhere), verifies the
+  binary's checksum, and execs it.
+- Everything past that point — the `install`/`publish`/`validate`/
+  `status`/`diff`/`upgrade` commands, and the environment/module DSL
+  parser — lives here as a single compiled binary, replacing the ~8k lines
+  of Bash previously implementing them directly in `machine-config`. Git
+  becomes optional: `publish`/`diff`/`status` use it when it's present and
+  degrade gracefully when it isn't, instead of hard-requiring it.
 
 The DSL itself (environments and modules, previously `mod_id "shell"` /
 `env_enable_module "git"`-style Bash function calls in `machine-config`'s
@@ -32,12 +35,21 @@ semantics this replaces.
 
 ## Status
 
-`validate`/`status`/`diff`/`publish`/`install` are implemented — discovery,
-`FROM`/`EXTENDS`/`REQUIRES` resolution with cycle/conflict detection,
-platform detection, package management (pacman/apt/AUR), file deployment,
-local values, Git identity, SSH key setup, and the manual-task checklist.
-`doctor` is out of scope for now. `upgrade`/`init` (the commands
-`docs/upgrading.md` will describe) aren't built yet.
+`validate`/`status`/`diff`/`publish`/`install`/`upgrade` are implemented —
+discovery, `FROM`/`EXTENDS`/`REQUIRES` resolution with cycle/conflict
+detection, platform detection, package management (pacman/apt/AUR), file
+deployment, local values, Git identity, SSH key setup, the manual-task
+checklist, and re-fetching/diffing/applying the latest `install.sh`/
+`config`/`manager.lock` (see [`docs/upgrading.md`](docs/upgrading.md)).
+`doctor` is out of scope for now. `init` (fetching a personal config repo
+directly, for the package-manager install path — see `docs/upgrading.md`'s
+sibling note in the original design plan) isn't built yet.
+
+Releases are published from this repo — see
+[Releases](https://github.com/p-victor/machine-config-manager/releases)
+for the real, current binaries `install.sh`/`config` fetch. You won't
+normally download one by hand: `machine-config`'s bootstrap does it for
+you (see that repo's README for the actual end-user quick start).
 
 ## Building
 

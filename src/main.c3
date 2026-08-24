@@ -18,10 +18,12 @@ import machine_config_manager::local_values;
 import machine_config_manager::git_identity;
 import machine_config_manager::ssh;
 import machine_config_manager::manual_tasks;
+import machine_config_manager::upgrade;
 import std::io;
 import std::io::path;
 import std::io::file;
 import std::os::env;
+import std::os::process;
 import std::collections::list;
 import std::collections::map;
 
@@ -40,6 +42,7 @@ fn int main(String[] args)
         io::printn("  diff     [--config-root PATH]");
         io::printn("  publish  [--config-root PATH] [--message MSG] [--yes] [--allow-secrets]");
         io::printn("  install  [--config-root PATH] [--environment ID] [--dry-run] [--yes] [--non-interactive]");
+        io::printn("  upgrade  [--config-root PATH] [--manager-source URL] [--template-source URL] [--dry-run] [--yes]");
         return 64;
     }
 
@@ -55,6 +58,8 @@ fn int main(String[] args)
             return cmd_publish(args[2..]);
         case "install":
             return cmd_install(args[2..]);
+        case "upgrade":
+            return cmd_upgrade(args[2..]);
         default:
             io::printfn("Unknown command: %s", args[1]);
             return 64;
@@ -942,5 +947,198 @@ fn int cmd_install(String[] args)
     }
 
     if (required_failed || aur_required_failed || files_failed) return 1;
+    return 0;
+}
+
+<*
+ Small text file over HTTPS — manager.lock/install.sh/config are all a
+ few KB at most, so a fixed 32KB buffer is generous headroom, not a real
+ size limit concern. Prefers curl, falls back to wget, same tool-detection
+ order as everywhere else in this project that shells out to fetch
+ something.
+*>
+faultdef FETCH_FAILED;
+
+fn String? fetch_text(String url)
+{
+    char[32768] buf;
+    String? out = process::run_capture_stdout(&buf, { "curl", "-fsSL", "--retry", "3", url });
+    if (try o = out) return o.tcopy();
+
+    String? out2 = process::run_capture_stdout(&buf, { "wget", "-q", "-O", "-", url });
+    if (try o = out2) return o.tcopy();
+
+    return FETCH_FAILED~;
+}
+
+fn void print_upgrade_diff(String label, upgrade::LineDiff* d)
+{
+    io::printfn("  %s:", label);
+    foreach (l : d.removed) io::printfn("    - %s", l);
+    foreach (l : d.added) io::printfn("    + %s", l);
+}
+
+<*
+ upgrade: re-downloads install.sh/config (from --template-source, machine-
+ config's template/ — see upgrade.c3's doc comment for why this is a
+ separate URL from --manager-source) and manager.lock's version/checksums
+ (from --manager-source's latest release), diffs each against what's
+ currently in the config repo, confirms, overwrites. install.sh's already-
+ configured repo URL (from `config init` or a previous upgrade) is
+ preserved through the update rather than reset to the placeholder.
+ Never touches environments/, modules/, or anything else — only these
+ three manager-owned files, matching this project's manager-owned/
+ user-owned split (see docs/upgrading.md).
+*>
+fn int cmd_upgrade(String[] args)
+{
+    String config_root = xdg::config_repo_root();
+    String manager_source = upgrade::DEFAULT_MANAGER_SOURCE;
+    String template_source = upgrade::DEFAULT_TEMPLATE_SOURCE;
+    bool dry_run = false;
+    bool assume_yes = false;
+    for (usz i = 0; i < args.len; i++)
+    {
+        switch (args[i])
+        {
+            case "--config-root":
+                if (i + 1 < args.len) { config_root = args[i + 1]; i++; }
+            case "--manager-source":
+                if (i + 1 < args.len) { manager_source = args[i + 1]; i++; }
+            case "--template-source":
+                if (i + 1 < args.len) { template_source = args[i + 1]; i++; }
+            case "--dry-run":
+                dry_run = true;
+            case "--yes":
+                assume_yes = true;
+            default:
+                break;
+        }
+    }
+
+    Path? root_path = path::tnew(config_root);
+    if (catch root_path)
+    {
+        io::printfn("Config root not found: %s", config_root);
+        return 66;
+    }
+    if (!path::is_dir(root_path))
+    {
+        io::printfn("Config root not found: %s", config_root);
+        return 66;
+    }
+
+    String lock_path = string::tformat("%s/manager.lock", config_root);
+    String install_path = string::tformat("%s/install.sh", config_root);
+    String config_path = string::tformat("%s/config", config_root);
+
+    char[] current_lock_raw = file::load_temp(lock_path) ?? (char[]){};
+    String current_lock = (String)current_lock_raw;
+    char[] current_install_raw = file::load_temp(install_path) ?? (char[]){};
+    String current_install = (String)current_install_raw;
+    char[] current_config_raw = file::load_temp(config_path) ?? (char[]){};
+    String current_config = (String)current_config_raw;
+
+    io::printn("Upgrade");
+    io::printn("");
+    io::printfn("Config root:      %s", config_root);
+    io::printfn("Manager source:   %s", manager_source);
+    io::printfn("Template source:  %s", template_source);
+    io::printn("");
+
+    io::printn("Fetching latest manager.lock");
+    String? new_lock = fetch_text(string::tformat("%s/releases/latest/download/manager.lock.fragment", manager_source));
+    if (catch new_lock)
+    {
+        io::printn("Failed to download the latest manager.lock; check your network connection and --manager-source.");
+        return 1;
+    }
+
+    io::printn("Fetching latest install.sh/config");
+    String? new_install = fetch_text(string::tformat("%s/install.sh", template_source));
+    if (catch new_install)
+    {
+        io::printn("Failed to download the latest install.sh; check your network connection and --template-source.");
+        return 1;
+    }
+    String? new_config = fetch_text(string::tformat("%s/config", template_source));
+    if (catch new_config)
+    {
+        io::printn("Failed to download the latest config; check your network connection and --template-source.");
+        return 1;
+    }
+
+    // Preserve whatever repo URL is already baked into the current
+    // install.sh (from `config init` or a previous upgrade) — an upgrade
+    // updates the manager's own logic, it doesn't reset which personal
+    // config repo this install.sh belongs to.
+    String? configured_url = upgrade::extract_configured_repo_url(current_install);
+    if (try url = configured_url)
+    {
+        new_install = upgrade::apply_configured_repo_url(new_install, url);
+    }
+
+    io::printn("");
+
+    upgrade::LineDiff lock_diff = upgrade::line_diff(current_lock, new_lock);
+    upgrade::LineDiff install_diff = upgrade::line_diff(current_install, new_install);
+    upgrade::LineDiff config_diff = upgrade::line_diff(current_config, new_config);
+
+    bool nothing_changed = upgrade::line_diff_is_empty(&lock_diff)
+        && upgrade::line_diff_is_empty(&install_diff)
+        && upgrade::line_diff_is_empty(&config_diff);
+
+    if (nothing_changed)
+    {
+        io::printn("Already up to date.");
+        return 0;
+    }
+
+    String? old_release = upgrade::extract_manager_release(current_lock);
+    String? new_release = upgrade::extract_manager_release(new_lock);
+    String old_release_label = "(none)";
+    if (try r = old_release) old_release_label = r;
+    String new_release_label = "(unknown)";
+    if (try r = new_release) new_release_label = r;
+    io::printfn("Manager release: %s -> %s", old_release_label, new_release_label);
+    io::printn("");
+
+    io::printn("Changes:");
+    if (!upgrade::line_diff_is_empty(&lock_diff)) print_upgrade_diff("manager.lock", &lock_diff);
+    if (!upgrade::line_diff_is_empty(&install_diff)) print_upgrade_diff("install.sh", &install_diff);
+    if (!upgrade::line_diff_is_empty(&config_diff)) print_upgrade_diff("config", &config_diff);
+    io::printn("");
+
+    if (dry_run)
+    {
+        io::printn("Dry run: nothing written.");
+        return 0;
+    }
+
+    if (!assume_yes && !prompt::confirm("Apply this upgrade?", false))
+    {
+        io::printn("Aborted.");
+        return 1;
+    }
+
+    if (catch file::save(lock_path, new_lock))
+    {
+        io::printn("Failed to write manager.lock.");
+        return 1;
+    }
+    if (catch file::save(install_path, new_install))
+    {
+        io::printn("Failed to write install.sh.");
+        return 1;
+    }
+    (void)process::run({ "chmod", "+x", install_path });
+    if (catch file::save(config_path, new_config))
+    {
+        io::printn("Failed to write config.");
+        return 1;
+    }
+    (void)process::run({ "chmod", "+x", config_path });
+
+    io::printn("Upgraded. Review the changes, commit, and push.");
     return 0;
 }
